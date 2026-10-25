@@ -1,0 +1,36 @@
+name: build
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.5.1
+      - name: Unpack project and assets
+        run: |
+          shopt -s nullglob
+          for z in code-packs/*.zip; do unzip -o -q "$z" -d .; done
+          mkdir -p src/main/resources
+          for z in asset-packs/*.zip; do unzip -o -q "$z" -d src/main/resources; done
+      - name: Resolve GeckoLib and ModMenu versions
+        run: |
+          get() { curl -sf -A "Fox-Animation-CI" -G "https://api.modrinth.com/v2/project/$1/version" --data-urlencode 'loaders=["fabric"]' "${@:2}" | jq -r '.[0].id // empty'; }
+          GL=$(get geckolib --data-urlencode 'game_versions=["26.3"]')
+          MM=$(get modmenu --data-urlencode 'game_versions=["26.3"]')
+          [ -n "$MM" ] || MM=$(get modmenu)
+          echo "geckolib=$GL modmenu=$MM"
+          [ -n "$GL" ] || { echo "No GeckoLib build found for 26.3"; exit 1; }
+          echo "geckolib_version=$GL" >> gradle.properties
+          echo "modmenu_version=$MM" >> gradle.properties
+      - run: gradle build --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fox-animation
+          path: build/libs/*.jar
